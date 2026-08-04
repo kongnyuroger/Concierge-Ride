@@ -8,6 +8,12 @@ RUN install-php-extensions \
     intl \
     zip
 
+# frankenphp ships with cap_net_bind_service set via setcap so it can bind :80
+# as non-root. Restricted-sandbox hosts (e.g. Render) reject exec of binaries
+# with that capability ("Operation not permitted"). We bind a high port via
+# $PORT anyway, so the capability is unnecessary — strip it.
+RUN setcap -r /usr/local/bin/frankenphp
+
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
