@@ -45,11 +45,25 @@ See /docs/adr/0003-rule-enforcement.md and "How to add a business rule" below.
   at the data layer with a rule-removal test; works on desktop + a mid-range phone; FR/EN;
   survives a slow connection; peer-reviewed; no secrets in the browser bundle.
 
-## How to add a business rule (fill/confirm during FND-6)
-1. Write a failing test at the data layer (not HTTP validation).
-2. Enforce it in the model/DB/service so the test passes.
-3. Add a bypass test (lowest-level insert path) proving it still can't be dodged.
-4. Confirm "fails if removed": delete the rule → tests go red → restore → green.
+## How to add a business rule
+Confirmed against a real rule (BR-6) in CR-10 — see /docs/adr/0003-rule-enforcement.md
+for the full pattern, naming conventions, and a worked example to copy.
+1. Write a failing test at the data layer: `tests/Feature/BusinessRules/<RuleName>Test.php`,
+   asserting via the model (`Model::create([...])`), not HTTP validation. Confirm it fails
+   because nothing rejects it yet, not for an unrelated reason.
+2. Enforce it — usually a model observer (throwing `BusinessRuleException::violated(...)`)
+   for a clear application-level error, PLUS a DB `CHECK` or trigger for the layer that
+   actually can't be bypassed. A model guard/observer alone does NOT satisfy step 3 below:
+   Eloquent events never fire for a raw query builder or SQL insert, so any rule enforced
+   only by an observer can be dodged one layer down, whatever it checks.
+3. Add a bypass test in the same file: the same violation via
+   `DB::table(...)->insert(...)` (the true lowest-level path), asserting it's still
+   rejected. If it fails at first, that's the signal to add the DB constraint/trigger —
+   not a sign the test is wrong.
+4. Confirm "fails if removed": comment out the enforcement (in the actual migration/
+   observer file, not a live out-of-band DB edit — Pest's RefreshDatabase rebuilds from
+   migration files at the start of each test run and will silently undo that) → tests go
+   red → restore → green.
 
 ## Common commands
 

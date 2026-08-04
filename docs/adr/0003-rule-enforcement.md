@@ -1,45 +1,101 @@
-# 0003 — Testing Approach & Per-Rule Enforcement (NFR-6)
+# 0003 — Rule Enforcement Pattern (NFR-6)
 
 ## Status
-Accepted — 2026-08-04
+Accepted — 2026-08-04. Supersedes a speculative draft of this same ADR written in CR-5
+(filed under a different filename, before any real rule existed) — CR-10 proved the
+pattern against a real rule (BR-6) and this rewrite reflects what TDD actually showed.
 
 ## Context
-NFR-6 requires every business rule (BR-*) to be enforced at the data layer, not just in
-a form or the UI, and to ship with a test that fails if the rule is removed. We need a
-standard testing stack and a repeatable procedure contributors follow for every rule.
+NFR-6: every business rule (BR-*) must be enforced at the data layer, with a test that
+fails if the rule is removed — never enforced only in a form or the UI. CR-10 built the
+first real rule (BR-6: a job's pickup time must be in the future at creation) test-first,
+specifically to prove this pattern rather than assert it in advance.
 
-## Options considered
-1. **PHPUnit only, HTTP-level tests.** Simple, but HTTP tests can't prove a rule survives
-   a direct model/DB bypass — exactly what NFR-6 guards against.
-2. **Pest (backend) + Vitest (frontend), data-layer-first tests, with a fixed 4-step rule
-   procedure.** More setup discipline, but directly enforces NFR-6's intent.
-3. **Add Playwright now for E2E.** Valuable but not needed to satisfy NFR-6 itself;
-   defer until there's real UI flow to cover.
-
-## Decision
-**Option 2.** Already implemented:
-- Backend: **Pest**, installed and configured to run against a real **PostgreSQL**
-  database (not SQLite) — SQLite doesn't enforce the same constraints Postgres does, and
-  NFR-6 is about DB-layer guarantees, so the test DB has to be the real engine.
-- Frontend: **Vitest**, installed and configured for unit tests. **Playwright** is in the
-  stack list (CLAUDE.md) for later — not installed yet; no ticket has needed E2E coverage
-  so far.
+## Testing stack
+- Backend: **Pest**, against a real **PostgreSQL** database (`concierge_ride_test`, not
+  SQLite) — SQLite doesn't enforce the same constraints Postgres does, and NFR-6 is about
+  Postgres-specific guarantees (`CHECK` immutability, trigger behavior), so the test DB
+  has to be the real engine.
 - CI (`backend-ci.yml`) runs Pest against a real `postgres:16` service container on every
   PR/push, so a rule that only "works locally" can't merge.
+- Frontend: Vitest is installed; **Playwright** stays deferred (pre-approved in the stack
+  list, ADR 0001) until a ticket actually needs E2E coverage — NFR-6 itself is a backend/
+  data-layer concern.
 
-**The per-rule procedure (already in CLAUDE.md, restated here as the ADR of record):**
-1. Write a failing test at the data layer (model/DB, not HTTP validation).
-2. Enforce the rule in the model/DB constraint/service so the test passes.
-3. Add a bypass test at the lowest-level insert path (e.g. direct `DB::table()->insert()`
-   or `Model::withoutEvents()`) proving the rule still can't be dodged.
-4. Confirm "fails if removed": comment out the enforcement → tests go red → restore →
-   green. (Reviewers should spot-check this on rule-touching PRs, not just trust it.)
+## The pattern
+
+**Where rules live — usually two layers, not one:**
+1. A **model guard/observer** (e.g. `App\Observers\JobObserver`, registered via
+   `Job::observe(...)` in `AppServiceProvider::boot()`) throwing
+   `App\Exceptions\BusinessRuleException::violated('BR-N', '...')`. This guards normal
+   Eloquent usage (`Model::create()`, `->save()`) with a clear, identifiable exception
+   type — and is what NFR-6's "model guard/observer" wording refers to.
+2. A **DB constraint** — a `CHECK` where the rule is expressible that way (same-row,
+   immutable expression), otherwise a `BEFORE INSERT`/`BEFORE UPDATE` trigger (Postgres
+   rejects `now()`/non-immutable functions in `CHECK`, so time-based or cross-table rules
+   need a trigger, not a `CHECK`).
+
+**Why both:** a model observer alone does not satisfy NFR-6. Eloquent events never fire
+for `DB::table(...)->insert(...)` or raw SQL — so *any* rule enforced only by an observer
+can be bypassed by going one layer lower, regardless of what the rule checks. CR-10's
+bypass test proved this directly: with only `JobObserver` in place, `DB::table('jobs')
+->insert([...'pickup_at' => past...])` succeeded silently. The DB constraint/trigger is
+the layer that actually can't be dodged; the observer is a convenience layer on top of
+it for nicer errors during normal application usage, not a substitute for it.
+
+**Naming:**
+- One test file per rule: `tests/Feature/BusinessRules/<RuleDescription>Test.php` (not
+  named after the rule code alone — `PickupTimeMustBeFutureTest`, not `Br6Test` — so the
+  test's purpose is obvious from its filename).
+- Trigger functions: `enforce_<what_it_enforces>()` (e.g. `enforce_pickup_in_future`),
+  distinct from BR-11's cross-cutting `prevent_hard_delete()` (one shared function reused
+  across every table, since that rule is identical everywhere — most rules won't be
+  cross-cutting like that and get their own function).
+- Exceptions: always `BusinessRuleException::violated('BR-N', 'human message')` — never a
+  bare `RuntimeException` or a `ValidationException` (that's for HTTP-layer form
+  validation, a different concern from a domain invariant).
+
+## How rules are tested
+Two tests minimum, in the same file:
+1. **The rule, via the model layer** — `Model::create([...])` with a violating value,
+   asserting the specific `BusinessRuleException` (or a DB-level exception if the rule is
+   trigger-only with no observer). Write this FIRST, red, and confirm it's red because
+   *nothing rejects it yet* — not for an unrelated reason (missing class, wrong table,
+   etc.) — before writing any enforcement.
+2. **The bypass test** — the same violation via `DB::table(...)->insert(...)` (or raw
+   SQL), asserting it's *still* rejected. If the rule only has a model guard so far,
+   expect this test to legitimately fail — that failure is the signal to add a DB
+   constraint/trigger, not a sign something's wrong with the test.
+
+## The "fails if removed" loop (demonstrated on BR-6, not just claimed)
+1. Comment out the enforcement (the trigger function's `RAISE EXCEPTION` block, or the
+   observer's registration in `AppServiceProvider`) — actually edit the file. Manually
+   dropping a live DB trigger via `psql` does **not** work as a substitute: Pest's
+   `RefreshDatabase` runs `migrate:fresh` from the migration *files* at the start of each
+   test process, silently undoing any out-of-band DB edit. The rule only "isn't there"
+   from the test suite's point of view if the migration file itself doesn't create it.
+2. Run the test(s) — confirm red.
+3. Restore the file, confirm green again.
+
+**A real nuance CR-10 hit, worth expecting:** with both layers in place, disabling *only*
+the observer still left the bypass-style rejection working (the trigger caught it) — but
+the model-layer test still correctly went red, because it got a `QueryException` instead
+of the expected `BusinessRuleException`. That's a feature, not a bug: the test is coupled
+to which layer is actually catching the violation, so an accidental regression in either
+layer shows up in CI even though the *data* stayed safe either way (defense in depth).
+
+## Reference implementation
+`backend/tests/Feature/BusinessRules/PickupTimeMustBeFutureTest.php`,
+`backend/app/Observers/JobObserver.php`, `backend/app/Exceptions/BusinessRuleException.php`,
+`backend/database/migrations/2026_08_04_212923_add_pickup_time_guard_to_jobs_table.php`
+(CR-10). Copy this shape for every future BR-*.
 
 ## Consequences
-- **Cost:** none beyond normal dev time — Pest/Vitest are already installed.
-- **Risk:** running Pest against real Postgres in CI is slower than SQLite-in-memory;
-  acceptable trade for correctness given NFR-6's explicit intent.
-- Every future PR touching a BR-* rule must include a bypass test; PR review should
-  reject rule changes without one.
-- Playwright stays a follow-up ADR-free addition (already pre-approved in the stack list)
-  whenever a ticket first needs E2E coverage.
+- **Cost:** one extra file (observer) plus one extra migration per rule that needs a
+  trigger, versus a single mechanism — the price of the bypass test actually meaning
+  something.
+- **Risk:** a rule expressible as a plain `CHECK` (same-row, immutable — e.g. BR-3) needs
+  no observer or trigger at all, just the constraint; don't add a redundant observer for
+  those. This two-layer shape is specifically for rules a `CHECK` can't express.
+- PR review for any rule-touching change should ask for the bypass test and the
+  fails-if-removed evidence, not just trust the enforcement code looks right.
