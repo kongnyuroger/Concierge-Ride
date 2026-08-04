@@ -19,6 +19,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      # Public (non-secret) URL — required for $env/static/public to resolve at
+      # check/build time. CI never talks to a real backend, so any value works.
+      PUBLIC_API_URL: http://localhost:8000
+
     steps:
       - uses: actions/checkout@v4
 
