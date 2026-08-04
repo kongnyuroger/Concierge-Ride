@@ -55,8 +55,11 @@ return new class extends Migration
         // BR-6 (pickup_at must be in the future at creation) is NOT a CHECK
         // constraint here: Postgres requires CHECK expressions to be
         // IMMUTABLE, and now()/CURRENT_TIMESTAMP are only STABLE — Postgres
-        // rejects a CHECK that references them. CR-18 enforces this (model
-        // observer or a BEFORE INSERT trigger using now()).
+        // rejects a CHECK that references them. Enforced instead by
+        // App\Observers\JobObserver (model layer) plus a BEFORE INSERT
+        // trigger added in CR-10's add_pickup_time_guard_to_jobs_table
+        // migration (the actual unbypassable layer) — see
+        // /docs/adr/0003-rule-enforcement.md.
     }
 
     public function down(): void
