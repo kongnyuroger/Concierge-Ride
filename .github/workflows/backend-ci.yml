@@ -1,0 +1,83 @@
+name: Backend CI
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  push:
+    branches: [dev]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: concierge_ride_test
+          POSTGRES_USER: concierge
+          POSTGRES_PASSWORD: concierge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U concierge -d concierge_ride_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, dom, fileinfo, bcmath, ctype, json, tokenizer, xml, pdo_pgsql, pgsql
+          coverage: none
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: backend/vendor
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Run migrations
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: concierge_ride_test
+          DB_USERNAME: concierge
+          DB_PASSWORD: concierge
+        run: php artisan migrate --force
+
+      - name: Run Pest
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: concierge_ride_test
+          DB_USERNAME: concierge
+          DB_PASSWORD: concierge
+        run: ./vendor/bin/pest --ci
+
+      - name: Check code style (Pint)
+        run: ./vendor/bin/pint --test
