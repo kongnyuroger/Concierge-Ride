@@ -67,6 +67,7 @@ jobs:
           DB_DATABASE: concierge_ride_test
           DB_USERNAME: concierge
           DB_PASSWORD: concierge
+          DB_SSLMODE: prefer
         run: php artisan migrate --force
 
       - name: Run Pest
@@ -77,6 +78,7 @@ jobs:
           DB_DATABASE: concierge_ride_test
           DB_USERNAME: concierge
           DB_PASSWORD: concierge
+          DB_SSLMODE: prefer
         run: ./vendor/bin/pest --ci
 
       - name: Check code style (Pint)
