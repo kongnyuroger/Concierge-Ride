@@ -67,13 +67,19 @@ for the full pattern, naming conventions, and a worked example to copy.
 
 ## Common commands
 
-### Local database (Postgres via Docker)
+### Database
+The app's dev/staging database is **Aiven Postgres**, not local Docker — get real
+connection details from the project owner or the Aiven console and put them in
+`backend/.env` (never commit them). See /docs/adr/0002-hosting.md, "Database — Aiven".
+
 ```bash
-docker compose up -d        # starts Postgres on localhost:5435
+docker compose up -d        # starts Postgres on localhost:5435, for Pest ONLY
 docker compose down          # stop (data persists in the postgres_data volume)
 ```
-Creates two databases on first boot: `concierge_ride` (app) and `concierge_ride_test`
-(Pest's feature tests run against this one — see /docs/adr/0001-stack.md).
+This local Postgres is still required — it's what `phpunit.xml` points `php artisan
+test` at (`concierge_ride_test`), kept local/fast/isolated rather than sharing Aiven
+across every test run. It is NOT what `backend/.env`'s `DB_*` vars should point at
+anymore for normal dev work (`php artisan serve`, `migrate`, `db:seed` against Aiven).
 
 ### Backend (`/backend`)
 ```bash
@@ -102,7 +108,7 @@ npm run format                # prettier --write
 ```
 
 ### End-to-end smoke check
-1. `docker compose up -d`
+1. `backend/.env` has real Aiven `DB_*` values set (see "Database" above)
 2. `cd backend && php artisan serve`
 3. `cd frontend && npm run dev` (separate shell)
 4. Visit `http://localhost:5173` — should show "API health check: ok"

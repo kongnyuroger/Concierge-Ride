@@ -1,7 +1,9 @@
 # 0002 — CI and Hosting
 
 ## Status
-Accepted — 2026-08-04
+Accepted — 2026-08-04. Amended 2026-08-05: Postgres moved from Render's managed
+database to Aiven (see "Database — Aiven" below); the rest of this ADR (Render for the
+API service, Vercel for the frontend, CI) is unchanged.
 
 ## Context
 The monorepo skeleton (ADR 0001) ran locally but wasn't reachable at a URL and had no
@@ -55,24 +57,52 @@ snapshot instead of erroring. One-time, already done for this account.
 - Staging service: `concierge-ride-api-staging`, root dir `backend`, Docker runtime,
   tracks `dev`, auto-deploys on push. Live at
   `https://concierge-ride-api-staging.onrender.com`.
-- Staging Postgres: `concierge-ride-db-staging`, free plan, region `oregon`.
-- **Production: not provisioned yet — deliberately.** Render allows only one free-tier
-  Postgres per account, and a second (production) instance needs a paid Basic plan
-  (~$6–7/mo). Rather than spend against an account with no real launch date yet, we
+- Staging Postgres: **Aiven**, not Render — see "Database — Aiven" below.
+- **Production API service: not provisioned yet — deliberately.** No real launch date;
   documented the exact steps below and left it for whoever cuts the first real release.
+  (Production *database* — see the Aiven section for the current state of that decision.)
 
-**To stand up production when ready:**
+**To stand up the production API service when ready:**
 ```bash
-render postgres create --name concierge-ride-db-production --plan basic_256mb --region oregon --version 16
 render services create --name concierge-ride-api-production --type web_service --runtime docker \
   --repo https://github.com/kongnyuroger/Concierge-Ride --branch <release-branch-or-tag> \
   --root-directory backend --plan starter --region oregon --health-check-path /api/health \
   --env-var APP_ENV=production --env-var APP_DEBUG=false --env-var APP_KEY=<fresh key> \
-  --env-var DB_CONNECTION=pgsql --env-var DB_HOST=<from postgres get> ...
+  --env-var DB_CONNECTION=pgsql --env-var DB_SSLMODE=require --env-var DB_HOST=<Aiven production DB host> ...
 ```
 Generate a **fresh** `APP_KEY` (`php artisan key:generate --show`) — never reuse
 staging's. Auto-deploy should stay off (or point at a `production` branch/tag you push
-to deliberately) so production only moves when someone intends it to.
+to deliberately) so production only moves when someone intends it to. Whether production
+uses a second Aiven database or something else isn't decided yet — see "Database — Aiven"
+below; this is deliberately left open rather than assumed.
+
+### Database — Aiven
+Staging's Postgres moved off Render's managed offering to an Aiven Postgres instance the
+project owner provisioned directly (2026-08-05) — decommissioned the Render Postgres
+(`concierge-ride-db-staging`) immediately after confirming the switch, so there's no
+dual-running cost. This also became the **local dev** database — `backend/.env` (not
+committed) points at Aiven instead of the docker-compose Postgres container.
+
+- **Local Pest tests still use docker-compose Postgres** (`concierge_ride_test` on
+  `localhost:5435`), unchanged — only the application dev database (`.env`) moved, not
+  `phpunit.xml`. Keeps test runs fast/local/isolated rather than hitting a shared cloud
+  instance every test run, and matches CI's own ephemeral `postgres:16` container.
+  `docker-compose.yml` stays in the repo for this reason — it isn't dead infrastructure.
+- **SSL is required**: `DB_SSLMODE=require` (Laravel's `config/database.php` already
+  exposes this via `env('DB_SSLMODE', 'prefer')` — no code change needed, just the env
+  var, added to `.env.example` as a placeholder-with-comment, not a real value).
+- **Version drift, noted not fixed**: Aiven's current default is Postgres 17; local
+  docker-compose and CI both run `postgres:16`. Nothing in this schema (CHECK
+  constraints, triggers, partial indexes) is 16-vs-17-sensitive today, but a future
+  migration should sanity-check against 17 specifically before assuming CI's 16 run is
+  sufficient proof it'll work in staging.
+- **Latency**: each migration statement takes noticeably longer against Aiven than
+  local/CI Postgres (roughly 1–15s per statement during the initial `migrate` run,
+  vendor network round-trip, not a schema problem) — expect `php artisan migrate` run
+  against Aiven to need backgrounding/patience, it's not hung.
+- Production database hosting (Aiven vs. a paid Render Postgres, per the original plan
+  below) is **not decided** — this amendment only covers staging + local dev, matching
+  what was actually asked for when this switch happened.
 
 ### Frontend — Vercel
 `@sveltejs/adapter-auto` (the `sv create` default) has no zero-config target for
@@ -133,7 +163,8 @@ work):
 | `APP_LOCALE` | `en` |
 | `LOG_CHANNEL` | `stderr` |
 | `DB_CONNECTION` | `pgsql` |
-| `DB_HOST` / `DB_PORT` / `DB_DATABASE` / `DB_USERNAME` / `DB_PASSWORD` | from `render postgres get concierge-ride-db-staging --include-sensitive-connection-info` |
+| `DB_SSLMODE` | `require` — Aiven requires SSL |
+| `DB_HOST` / `DB_PORT` / `DB_DATABASE` / `DB_USERNAME` / `DB_PASSWORD` | Aiven connection details — from the Aiven console, not Render (Render no longer hosts this database) |
 
 **Frontend (Vercel), all targets:**
 | Var | Value |
@@ -150,10 +181,10 @@ No secrets are committed anywhere; `.env`/`.env.local` stay gitignored in both a
 ## Cost estimate (current, staging-only)
 | Item | Plan | Cost |
 |---|---|---|
-| Render Postgres (staging) | Free | $0/mo (⚠️ auto-deletes 30 days after creation — created 2026-08-04, expires 2026-09-03; must upgrade or recreate before then) |
+| Aiven Postgres (staging + local dev) | Whatever plan the project owner provisioned | **Not priced in this ADR** — provisioned directly by the project owner outside this session; confirm the actual plan/cost in the Aiven console rather than assuming free tier |
 | Render web service (staging) | Free | $0/mo (spins down after 15 min idle; ~30–60s cold start on the next request — acceptable for staging, not for production) |
 | Vercel (frontend) | Hobby | $0/mo (⚠️ non-commercial only — see gap above) |
-| **Current total** | | **$0/mo** |
+| **Current total** | | **Render + Vercel: $0/mo, plus whatever Aiven's plan costs (unconfirmed)** |
 
 **Once production is stood up** (per the steps above): Render Postgres Basic 256mb
 (~$6–7/mo) + Render web service Starter (~$7/mo) + Vercel Pro (~$20/mo/member) ≈
@@ -191,12 +222,17 @@ to be hand-built from separate apps plus custom CI glue, for no clear benefit ov
 other two options at this project's scale.
 
 ## Consequences
-- Production (Postgres, Render API service, and a real Vercel Pro deployment) is
-  documented but **not live**. The next person to cut a real release needs to follow the
-  "To stand up production" steps above, upgrade Vercel to Pro, and budget the ~$35–40/mo.
-- Staging's free-tier Postgres expires 2026-09-03 unless upgraded or recreated first —
-  worth a calendar reminder.
+- Production (a production database, Render API service, and a real Vercel Pro
+  deployment) is documented but **not live**. The next person to cut a real release
+  needs to follow the "To stand up production" steps above, decide where the production
+  database lives (Aiven or Render — open, see "Database — Aiven"), upgrade Vercel to
+  Pro, and budget accordingly.
+- Local dev now depends on network access to Aiven — offline local app development
+  (not testing, which still runs against docker-compose) isn't possible without it.
+  Worth reconsidering if that becomes a real friction point.
 - Render's free web service cold-starts (~30–60s) are fine for a staging/demo URL but
   would need a paid plan before anyone treats staging as reliably fast.
 - `PUBLIC_API_URL` is a build-time value (`$env/static/public`) — pointing the frontend
   at a different backend always requires a rebuild + redeploy, not just an env var flip.
+- Confirm Aiven's actual plan/cost and whether it has its own free-tier expiry or
+  resource caps to plan around — not established in this ADR, see the cost table above.
