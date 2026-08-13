@@ -8,13 +8,13 @@ use App\Models\Product;
 use App\Models\Tier;
 use App\Models\Vehicle;
 use Illuminate\Database\Seeder;
-use Spatie\Permission\Models\Role;
 
 class ReferenceDataSeeder extends Seeder
 {
     /**
-     * Baseline reference data: roles, the product/tier catalog, the price
-     * book grid, and a couple of sample drivers/vehicles to build against.
+     * Baseline reference data: the product/tier catalog, the price book
+     * grid, and a couple of sample drivers/vehicles to build against.
+     * Roles/permissions are seeded separately — see PermissionsSeeder.
      *
      * Idempotent — safe to re-run (updateOrCreate/firstOrCreate throughout).
      *
@@ -24,11 +24,6 @@ class ReferenceDataSeeder extends Seeder
      */
     public function run(): void
     {
-        // Provisional minimal set — CR-15 builds the real role/permission matrix.
-        foreach (['admin', 'dispatcher'] as $role) {
-            Role::findOrCreate($role);
-        }
-
         $products = collect([
             ['name' => 'Airport transfer', 'code' => 'airport_transfer'],
             ['name' => 'Half-day', 'code' => 'half_day'],
