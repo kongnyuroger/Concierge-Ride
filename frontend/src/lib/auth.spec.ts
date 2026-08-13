@@ -38,16 +38,21 @@ describe('auth', () => {
 	});
 
 	it('login stores the token from a successful response', async () => {
+		const apiUser = {
+			id: 1,
+			name: 'Owner',
+			email: 'o@x.test',
+			role: 'owner',
+			permissions: ['leads.manage']
+		};
 		vi.stubGlobal(
 			'fetch',
-			vi.fn(async () =>
-				Response.json({ token: 'abc123', user: { id: 1, name: 'Owner', email: 'o@x.test' } })
-			)
+			vi.fn(async () => Response.json({ token: 'abc123', user: apiUser }))
 		);
 
 		const user = await login('o@x.test', 'secret');
 
-		expect(user).toEqual({ id: 1, name: 'Owner', email: 'o@x.test' });
+		expect(user).toEqual(apiUser);
 		expect(getToken()).toBe('abc123');
 	});
 
