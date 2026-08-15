@@ -27,7 +27,7 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $user->createToken('web')->plainTextToken,
-            'user' => $user->only(['id', 'name', 'email']),
+            'user' => $user->toAuthPayload(),
         ]);
     }
 
