@@ -2,6 +2,7 @@
 
 use App\Enums\Permission;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\PriceBookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -34,8 +35,7 @@ Route::middleware('auth:sanctum')->group(function () {
         'customers' => Permission::ManageCustomers,         // CR-11
         'queues/individual' => Permission::ViewIndividualQueue, // CR-11/12
         'queues/company' => Permission::ViewCompanyQueue,   // CR-20
-        'price-book' => Permission::ManagePriceBook,        // CR-13
-        'driver-rates' => Permission::ManageDriverRates,    // CR-13
+        'driver-rates' => Permission::ManageDriverRates,    // not yet scoped to a ticket
         'accounts' => Permission::ManageAccounts,           // CR-20
         'audit-log' => Permission::ViewAuditLog,            // CR-32
     ];
@@ -46,4 +46,11 @@ Route::middleware('auth:sanctum')->group(function () {
             'status' => 'not yet implemented',
         ]))->middleware("permission:{$permission->value}");
     }
+
+    // CR-13: price-book is real now — same permission gate the stub above
+    // used, just a real controller instead of a placeholder closure.
+    Route::middleware('permission:'.Permission::ManagePriceBook->value)->group(function () {
+        Route::get('/price-book', [PriceBookController::class, 'index']);
+        Route::put('/price-book/{priceBookEntry}', [PriceBookController::class, 'update']);
+    });
 });
