@@ -23,6 +23,7 @@ function createBaseProductAndTier(): array
 {
     $city = City::first() ?? City::create([
         'name' => 'Douala',
+        'code' => 'DLA',
     ]);
     
     $product = Product::first() ?? Product::create([
@@ -48,6 +49,7 @@ test('creating multiple active prices for the same product and tier is rejected'
         'product_id'     => $productId,
         'tier_id'        => $tierId,
         'customer_price' => 10000,
+        'margin_floor'   => 5000,
         'status'         => 'active',
     ]);
 
@@ -57,6 +59,7 @@ test('creating multiple active prices for the same product and tier is rejected'
         'product_id'     => $productId,
         'tier_id'        => $tierId,
         'customer_price' => 15000,
+        'margin_floor'   => 5000,
         'status'         => 'active',
     ]);
 })->throws(QueryException::class);
@@ -69,6 +72,7 @@ test('BYPASS: creating multiple active prices is rejected via the query builder 
         'product_id'     => $productId,
         'tier_id'        => $tierId,
         'customer_price' => 10000,
+        'margin_floor'   => 5000,
         'status'         => 'active',
         'created_at'     => now(),
         'updated_at'     => now(),
@@ -79,6 +83,7 @@ test('BYPASS: creating multiple active prices is rejected via the query builder 
         'product_id'     => $productId,
         'tier_id'        => $tierId,
         'customer_price' => 15000,
+        'margin_floor'   => 5000,
         'status'         => 'active',
         'created_at'     => now(),
         'updated_at'     => now(),
@@ -94,6 +99,7 @@ test('superseding correctly allows the new active price', function () {
         'product_id'     => $productId,
         'tier_id'        => $tierId,
         'customer_price' => 10000,
+        'margin_floor'   => 5000,
         'status'         => 'active',
     ]);
 
@@ -111,6 +117,7 @@ test('superseding correctly allows the new active price', function () {
         'product_id'     => $productId,
         'tier_id'        => $tierId,
         'customer_price' => 15000,
+        'margin_floor'   => 7500,
         'status'         => 'active',
     ]);
 
