@@ -11,7 +11,6 @@
  * Only one 'active' price book entry can exist per product + tier.
  */
 
-use App\Exceptions\BusinessRuleException;
 use App\Models\City;
 use App\Models\PriceBookEntry;
 use App\Models\Product;
@@ -25,12 +24,12 @@ function createBaseProductAndTier(): array
         'name' => 'Douala',
         'code' => 'DLA',
     ]);
-    
+
     $product = Product::first() ?? Product::create([
         'name' => 'Airport transfer',
         'code' => 'airport_transfer',
     ]);
-    
+
     $tier = Tier::first() ?? Tier::create([
         'name' => 'Standard',
         'code' => 'standard',
@@ -45,22 +44,22 @@ test('creating multiple active prices for the same product and tier is rejected'
 
     // First active price is fine
     PriceBookEntry::create([
-        'city_id'        => $cityId,
-        'product_id'     => $productId,
-        'tier_id'        => $tierId,
+        'city_id' => $cityId,
+        'product_id' => $productId,
+        'tier_id' => $tierId,
         'customer_price' => 10000,
-        'margin_floor'   => 5000,
-        'status'         => 'active',
+        'margin_floor' => 5000,
+        'status' => 'active',
     ]);
 
     // Second active price without superseding first should fail
     PriceBookEntry::create([
-        'city_id'        => $cityId,
-        'product_id'     => $productId,
-        'tier_id'        => $tierId,
+        'city_id' => $cityId,
+        'product_id' => $productId,
+        'tier_id' => $tierId,
         'customer_price' => 15000,
-        'margin_floor'   => 5000,
-        'status'         => 'active',
+        'margin_floor' => 5000,
+        'status' => 'active',
     ]);
 })->throws(QueryException::class);
 
@@ -68,25 +67,25 @@ test('BYPASS: creating multiple active prices is rejected via the query builder 
     [$cityId, $productId, $tierId] = createBaseProductAndTier();
 
     DB::table('price_book_entries')->insert([
-        'city_id'        => $cityId,
-        'product_id'     => $productId,
-        'tier_id'        => $tierId,
+        'city_id' => $cityId,
+        'product_id' => $productId,
+        'tier_id' => $tierId,
         'customer_price' => 10000,
-        'margin_floor'   => 5000,
-        'status'         => 'active',
-        'created_at'     => now(),
-        'updated_at'     => now(),
+        'margin_floor' => 5000,
+        'status' => 'active',
+        'created_at' => now(),
+        'updated_at' => now(),
     ]);
 
     DB::table('price_book_entries')->insert([
-        'city_id'        => $cityId,
-        'product_id'     => $productId,
-        'tier_id'        => $tierId,
+        'city_id' => $cityId,
+        'product_id' => $productId,
+        'tier_id' => $tierId,
         'customer_price' => 15000,
-        'margin_floor'   => 5000,
-        'status'         => 'active',
-        'created_at'     => now(),
-        'updated_at'     => now(),
+        'margin_floor' => 5000,
+        'status' => 'active',
+        'created_at' => now(),
+        'updated_at' => now(),
     ]);
 })->throws(QueryException::class);
 
@@ -95,30 +94,30 @@ test('superseding correctly allows the new active price', function () {
 
     // First active price
     PriceBookEntry::create([
-        'city_id'        => $cityId,
-        'product_id'     => $productId,
-        'tier_id'        => $tierId,
+        'city_id' => $cityId,
+        'product_id' => $productId,
+        'tier_id' => $tierId,
         'customer_price' => 10000,
-        'margin_floor'   => 5000,
-        'status'         => 'active',
+        'margin_floor' => 5000,
+        'status' => 'active',
     ]);
 
     // Properly supersede it
     PriceBookEntry::where([
-        'city_id'    => $cityId,
+        'city_id' => $cityId,
         'product_id' => $productId,
-        'tier_id'    => $tierId,
-        'status'     => 'active',
+        'tier_id' => $tierId,
+        'status' => 'active',
     ])->update(['status' => 'superseded']);
 
     // Now adding a new active price should succeed
     $newEntry = PriceBookEntry::create([
-        'city_id'        => $cityId,
-        'product_id'     => $productId,
-        'tier_id'        => $tierId,
+        'city_id' => $cityId,
+        'product_id' => $productId,
+        'tier_id' => $tierId,
         'customer_price' => 15000,
-        'margin_floor'   => 7500,
-        'status'         => 'active',
+        'margin_floor' => 7500,
+        'status' => 'active',
     ]);
 
     expect($newEntry->status)->toBe('active');
