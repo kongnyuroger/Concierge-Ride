@@ -2,25 +2,53 @@
 
 namespace App\Observers;
 
-use App\Exceptions\BusinessRuleException;
+use App\Models\AuditLog;
 use App\Models\Job;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Request;
 
 class JobObserver
 {
-    /**
-     * BR-6: pickup time must be in the future at creation.
-     *
-     * This guards Job::create()/save() — normal Eloquent usage — with a
-     * clear application-level error. It does NOT guard a raw query builder
-     * or SQL insert, since Eloquent events never fire for those; that gap
-     * is why this rule also has a DB trigger (see the migration this
-     * ticket adds) as the actual unbypassable layer. See
-     * /docs/adr/0003-rule-enforcement.md.
-     */
-    public function creating(Job $job): void
+    public function created(Job $job): void
     {
-        if ($job->pickup_at !== null && $job->pickup_at->isPast()) {
-            throw BusinessRuleException::violated('BR-6', 'Pickup time must be in the future.');
+        $this->recordAudit($job, 'created', null, $job->getAttributes());
+    }
+
+    public function updating(Job $job): void
+    {
+        // Get modified attributes only
+        $dirty = $job->getDirty();
+        
+        if (empty($dirty)) {
+            return;
         }
+
+        $oldValues = [];
+        $newValues = [];
+
+        foreach ($dirty as $field => $newValue) {
+            // Ignore internal system timestamps if irrelevant
+            if (in_array($field, ['updated_at'])) continue;
+
+            $oldValues[$field] = $job->getOriginal($field);
+            $newValues[$field] = $newValue;
+        }
+
+        if (!empty($newValues)) {
+            $this->recordAudit($job, 'updated', $oldValues, $newValues);
+        }
+    }
+
+    private function recordAudit(Job $job, string $action, ?array $oldValues, ?array $newValues): void
+    {
+        AuditLog::create([
+            'auditable_type' => Job::class,
+            'auditable_id' => $job->id,
+            'user_id' => Auth::id(),
+            'action' => $action,
+            'old_values' => $oldValues,
+            'new_values' => $newValues,
+            'ip_address' => Request::ip(),
+        ]);
     }
 }
