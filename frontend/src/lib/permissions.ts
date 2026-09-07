@@ -32,6 +32,7 @@ export type NavItem = {
 // +page.svelte at each path.
 export const NAV_ITEMS: NavItem[] = [
 	{ label: 'Dashboard', href: '/dashboard', permission: null },
+	{ label: 'Board', href: '/board', permission: 'jobs.manage' },
 	{ label: 'Leads', href: '/leads', permission: 'leads.manage' },
 	{ label: 'Jobs', href: '/jobs', permission: 'jobs.manage' },
 	{ label: 'Customers', href: '/customers', permission: 'customers.manage' },

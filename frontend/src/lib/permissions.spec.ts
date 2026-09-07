@@ -41,6 +41,6 @@ describe('visibleNavItems', () => {
 
 		const items = visibleNavItems(allPermissions);
 
-		expect(items).toHaveLength(10); // 9 gated + Dashboard
+		expect(items).toHaveLength(11); // 10 gated + Dashboard
 	});
 });
